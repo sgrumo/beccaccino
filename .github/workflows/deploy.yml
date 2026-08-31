@@ -1,0 +1,122 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "lib/**"
+      - "config/**"
+      - "priv/**"
+      - "assets/**"
+      - "test/**"
+      - "mix.exs"
+      - "mix.lock"
+      - "Dockerfile"
+      - "infra/on-prem/**"
+      - ".github/workflows/deploy.yml"
+      - ".github/workflows/pr-check.yml"
+  workflow_dispatch:
+
+# Never let two deploys touch the host at the same time; queue instead.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/${{ github.repository }}/app
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/pr-check.yml
+
+  build:
+    name: Build app image
+    runs-on: ubuntu-latest
+    needs: ci
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to host
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only the compose file travels; infra/on-prem/.env.deploy lives on the
+      # host and must not be overwritten (hence no `rm: true`).
+      - name: Copy compose file to host
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "infra/on-prem/docker-compose.yml"
+          target: ${{ vars.DEPLOY_PATH }}
+
+      - name: Pull image and restart services
+        uses: appleboy/ssh-action@v1
+        env:
+          APP_IMAGE: ${{ env.IMAGE }}:${{ github.sha }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: APP_IMAGE,GHCR_USER,GHCR_TOKEN
+          script: |
+            set -e
+            cd ${{ vars.DEPLOY_PATH }}
+            COMPOSE="docker compose -f infra/on-prem/docker-compose.yml --env-file infra/on-prem/.env.deploy"
+
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            $COMPOSE pull
+
+            # `up -d` only prints a one-line "service X didn't complete
+            # successfully" summary and swallows the failed container's output.
+            # On failure, dump every service's log so the real error (migration,
+            # app startup, ...) reaches CI. --wait blocks until healthchecks pass.
+            if ! $COMPOSE up -d --remove-orphans --wait --wait-timeout 180; then
+                echo "===== container logs ====="
+                $COMPOSE logs --no-color --tail=200
+                docker logout ghcr.io
+                exit 1
+            fi
+
+            docker logout ghcr.io
+            docker image prune -f

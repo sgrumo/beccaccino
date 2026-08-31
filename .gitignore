@@ -33,3 +33,6 @@ averziano-*.tar
 
 # Static assets built from source
 /priv/static/assets/
+
+# Deploy secrets kept on the server
+/infra/on-prem/.env.deploy
