@@ -31,6 +31,18 @@ defmodule AverzianoWeb.Router do
     pipe_through [:api, :authenticated]
   end
 
+  # Screen prototypes (no auth: they render placeholder state, not real games)
+  scope "/prototipi", AverzianoWeb do
+    pipe_through :browser
+
+    live_session :prototipi do
+      live "/", Live.Prototipi
+      live "/lobby", Live.Lobby
+      live "/briscola", Live.Briscola
+      live "/tavolo", Live.Tavolo
+    end
+  end
+
   # Admin (browser + LiveView)
   scope "/admin", AverzianoWeb do
     pipe_through :browser

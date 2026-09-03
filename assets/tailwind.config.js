@@ -9,7 +9,37 @@ module.exports = {
     "../lib/averziano_web/**/*.*ex"
   ],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        // Funnel Display for headings, Funnel Sans for everything else.
+        display: ["Funnel Display", "Funnel Sans", "ui-sans-serif", "sans-serif"],
+        sans: ["Funnel Sans", "-apple-system", "Segoe UI", "sans-serif"],
+        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"]
+      },
+      colors: {
+        // Brand violet ramp: buttons, felt gradient, highlights.
+        brand: {
+          DEFAULT: "#5E30E6",
+          dark: "#4B24BF",
+          deep: "#391A99",
+          night: "#241C3D",
+          light: "#A98EFF"
+        },
+        // Type and surfaces on light screens (lobby).
+        lilac: {DEFAULT: "#C2B0FF", soft: "#DDD2FF"},
+        ink: "#1E1E1E",
+        paper: "#F7F7F8",
+        prose: "#3A3D4F",
+        muted: "#71717A",
+        inactive: "#8F92A3",
+        edge: "#D8D8DD",
+        line: "#EDEDED",
+        // Neutral placeholder card faces — real artwork replaces these.
+        card: {face: "#FFFFFF", weave: "#F2F1F6", picked: "#EDE9FB", edge: "#B9BBC6"},
+        // Per-table accent dots in the lobby list.
+        table: {blue: "#0759C4", green: "#059669", olive: "#AEBF32"}
+      }
+    },
   },
   plugins: [
     require("@tailwindcss/forms"),
