@@ -111,4 +111,101 @@ defmodule AverzianoWeb.Live.PrototipiTest do
       refute has_element?(view, "[data-hand=ventaglio]")
     end
   end
+
+  describe "tutorial" do
+    test "the homepage offers it but keeps it closed", %{conn: conn} do
+      {:ok, view, html} = live(conn, ~p"/prototipi")
+
+      assert html =~ "Come si gioca"
+      assert html =~ "tutorial in 7 passi"
+      refute has_element?(view, "#tutorial")
+    end
+
+    test "the button opens it on the first step", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/prototipi")
+
+      html = view |> element("button[phx-click=tutorial-open]") |> render_click()
+
+      assert html =~ "passo 1/7"
+      assert html =~ "Quattro giocatori, due coppie"
+      refute has_element?(view, "button[phx-click=tutorial-prev]")
+    end
+
+    test "walks forward through every step and ends on the closing button",
+         %{conn: conn} do
+      view = open_tutorial(conn)
+
+      titles =
+        for _step <- 2..7 do
+          view |> element("button[phx-click=tutorial-next]") |> render_click()
+          view |> element("#tutorial-title") |> render()
+        end
+
+      assert Enum.any?(titles, &(&1 =~ "Busso, striscio, volo"))
+      assert render(view) =~ "passo 7/7"
+      assert render(view) =~ "Ho capito"
+      refute has_element?(view, "button[phx-click=tutorial-next]")
+    end
+
+    test "each step shows the screenshot of the screen it talks about",
+         %{conn: conn} do
+      view = open_tutorial(conn)
+
+      assert has_element?(view, "#tutorial [data-hand=ventaglio]")
+
+      view |> element("button[phx-click=tutorial-goto][phx-value-index=\"2\"]") |> render_click()
+
+      assert has_element?(view, "#tutorial [data-hand=ventaglio]")
+      assert has_element?(view, "#tutorial [data-hand=griglia]")
+    end
+
+    test "the dots jump straight to a step", %{conn: conn} do
+      view = open_tutorial(conn)
+
+      view |> element("button[phx-click=tutorial-goto][phx-value-index=\"6\"]") |> render_click()
+
+      assert render(view) =~ "passo 7/7"
+      assert render(view) =~ "Undici e un terzo per mano"
+    end
+
+    test "closing puts the page back", %{conn: conn} do
+      view = open_tutorial(conn)
+
+      view |> element("button[phx-click=tutorial-close]") |> render_click()
+
+      refute has_element?(view, "#tutorial")
+      assert has_element?(view, "button[phx-click=tutorial-open]")
+    end
+
+    test "arrows step and escape closes", %{conn: conn} do
+      view = open_tutorial(conn)
+
+      view |> element("#tutorial") |> render_keydown(%{"key" => "ArrowRight"})
+      assert render(view) =~ "passo 2/7"
+
+      view |> element("#tutorial") |> render_keydown(%{"key" => "ArrowLeft"})
+      assert render(view) =~ "passo 1/7"
+
+      view |> element("#tutorial") |> render_keydown(%{"key" => "Escape"})
+      refute has_element?(view, "#tutorial")
+    end
+
+    test "stepping past either end stays on the step", %{conn: conn} do
+      view = open_tutorial(conn)
+
+      view |> element("#tutorial") |> render_keydown(%{"key" => "ArrowLeft"})
+      assert render(view) =~ "passo 1/7"
+
+      view |> element("button[phx-click=tutorial-goto][phx-value-index=\"6\"]") |> render_click()
+      view |> element("#tutorial") |> render_keydown(%{"key" => "ArrowRight"})
+      assert render(view) =~ "passo 7/7"
+    end
+  end
+
+  @spec open_tutorial(Plug.Conn.t()) :: Phoenix.LiveViewTest.View.t()
+  defp open_tutorial(conn) do
+    {:ok, view, _html} = live(conn, ~p"/prototipi")
+    view |> element("button[phx-click=tutorial-open]") |> render_click()
+    view
+  end
 end

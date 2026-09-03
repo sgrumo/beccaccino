@@ -2,10 +2,17 @@ defmodule AverzianoWeb.Live.Prototipi do
   @moduledoc """
   Entry point for the screen prototypes: two variants, identical except for
   how the hand is presented, each walkable end to end.
+
+  Also the front door for the "come si gioca" walkthrough, which opens over
+  this page as a stepper rather than on a route of its own — it is something
+  you read once before playing, not somewhere you navigate to.
   """
   use AverzianoWeb, :live_view
 
+  import AverzianoWeb.TutorialComponents
+
   alias AverzianoWeb.Live.HandVariant
+  alias AverzianoWeb.TutorialComponents
 
   @screens [
     {:lobby, "Lobby", "elenco tavoli, ruleset in chiaro"},
@@ -13,10 +20,47 @@ defmodule AverzianoWeb.Live.Prototipi do
     {:tavolo, "Tavolo", "presa 6 di 10 · ruota con il telefono"}
   ]
 
+  @last_step length(TutorialComponents.steps()) - 1
+
   @impl Phoenix.LiveView
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, page_title: "Prototipi", screens: @screens)}
+    {:ok, assign(socket, page_title: "Prototipi", screens: @screens, tutorial_step: nil)}
   end
+
+  @impl Phoenix.LiveView
+  def handle_event("tutorial-open", _params, socket) do
+    {:noreply, assign(socket, tutorial_step: 0)}
+  end
+
+  def handle_event("tutorial-close", _params, socket) do
+    {:noreply, assign(socket, tutorial_step: nil)}
+  end
+
+  def handle_event("tutorial-prev", _params, socket) do
+    {:noreply, assign(socket, tutorial_step: max(socket.assigns.tutorial_step - 1, 0))}
+  end
+
+  def handle_event("tutorial-next", _params, socket) do
+    {:noreply, assign(socket, tutorial_step: min(socket.assigns.tutorial_step + 1, @last_step))}
+  end
+
+  def handle_event("tutorial-goto", %{"index" => index}, socket) do
+    {:noreply, assign(socket, tutorial_step: clamp(String.to_integer(index)))}
+  end
+
+  def handle_event("tutorial-key", %{"key" => "Escape"}, socket) do
+    {:noreply, assign(socket, tutorial_step: nil)}
+  end
+
+  def handle_event("tutorial-key", %{"key" => "ArrowRight"}, socket) do
+    handle_event("tutorial-next", %{}, socket)
+  end
+
+  def handle_event("tutorial-key", %{"key" => "ArrowLeft"}, socket) do
+    handle_event("tutorial-prev", %{}, socket)
+  end
+
+  def handle_event("tutorial-key", _params, socket), do: {:noreply, socket}
 
   @impl Phoenix.LiveView
   def render(assigns) do
@@ -32,6 +76,20 @@ defmodule AverzianoWeb.Live.Prototipi do
         Due varianti a confronto, identiche in tutto tranne la <strong class="font-semibold text-ink">presentazione della mano</strong>: 1a a ventaglio,
         1b a griglia 2×5. Le carte sono segnaposto neutri.
       </p>
+
+      <button
+        type="button"
+        phx-click="tutorial-open"
+        class="mt-7 flex w-full items-center gap-4 rounded-2xl border border-brand bg-brand px-5 py-4 text-left text-white sm:w-auto"
+      >
+        <span class="flex-1">
+          <span class="block text-[15px] font-bold">Come si gioca</span>
+          <span class="mt-0.5 block font-mono text-[11px] text-lilac-soft">
+            tutorial in {length(TutorialComponents.steps())} passi · con schermate
+          </span>
+        </span>
+        <span aria-hidden="true" class="flex-none font-mono text-lg leading-none">→</span>
+      </button>
 
       <div class="mt-10 grid gap-6 sm:grid-cols-2">
         <section
@@ -57,6 +115,16 @@ defmodule AverzianoWeb.Live.Prototipi do
           </ul>
         </section>
       </div>
+
+      <.tutorial
+        :if={@tutorial_step}
+        index={@tutorial_step}
+        on_close="tutorial-close"
+        on_prev="tutorial-prev"
+        on_next="tutorial-next"
+        on_goto="tutorial-goto"
+        on_key="tutorial-key"
+      />
     </div>
     """
   end
@@ -65,4 +133,7 @@ defmodule AverzianoWeb.Live.Prototipi do
   defp screen_path(:lobby, mano), do: ~p"/prototipi/lobby?mano=#{mano}"
   defp screen_path(:briscola, mano), do: ~p"/prototipi/briscola?mano=#{mano}"
   defp screen_path(:tavolo, mano), do: ~p"/prototipi/tavolo?mano=#{mano}"
+
+  @spec clamp(integer()) :: integer()
+  defp clamp(index), do: index |> max(0) |> min(@last_step)
 end
